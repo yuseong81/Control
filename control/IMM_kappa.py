@@ -18,53 +18,6 @@ from pure_pursuit_tracker import PurePursuitController
 
 class IMMLogger:
     def __init__(self):
-        self.history = {
-            'step': [],
-            'mu_s': [], 'mu_p': [],
-            'steer': [],
-            'cte_s': [], 'cte_p': []
-        }
-
-    def record(self, mu, steer, cte_s, cte_p):
-        self.history['step'].append(len(self.history['step']))
-        self.history['mu_s'].append(mu[0])
-        self.history['mu_p'].append(mu[1])
-        self.history['steer'].append(np.rad2deg(steer))
-        self.history['cte_s'].append(cte_s)
-        self.history['cte_p'].append(cte_p)
-
-    def plot(self):
-        if not self.history['step']: return
-        
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
-        steps = self.history['step']
-
-        # 1. 모델 확률 (누적 영역 그래프)
-        ax1.fill_between(steps, 0, self.history['mu_s'], label='Stanley', alpha=0.6, color='royalblue')
-        ax1.fill_between(steps, self.history['mu_s'], 1, label='Pure Pursuit', alpha=0.4, color='tomato')
-        ax1.set_ylabel("Probability")
-        ax1.set_ylim(0, 1)
-        ax1.legend(loc='upper right')
-        ax1.set_title("IMM Model Probabilities")
-
-        # 2. 최종 조향각
-        ax2.plot(steps, self.history['steer'], color='black', linewidth=1)
-        ax2.set_ylabel("Steer Angle [deg]")
-        ax2.grid(True, alpha=0.3)
-
-        # 3. 모델별 CTE 비교
-        ax3.plot(steps, self.history['cte_s'], label='Stanley CTE', alpha=0.7)
-        ax3.plot(steps, self.history['cte_p'], label='PP CTE', alpha=0.7)
-        ax3.set_ylabel("CTE [m]")
-        ax3.set_xlabel("Simulation Step")
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        plt.show()
-
-class IMMLogger:
-    def __init__(self):
         # cte_s 제거, kappa 추가
         self.history = {
             'step': [],
@@ -236,20 +189,20 @@ class IMMController(Node):
         곡률(kappa)과 횡방향 오차(cte)를 결합하여 우도 계산
         """
         # kappa가 클수록 PP 선호
-        kappa_threshold = 0.15 
+        kappa_threshold = 0.15
         # if kappa < 0.05: # 낮은 곡률에서는 강제로 Stanley 우도 높임
         #     prob_pp_kappa = 0.0
         # else:
         #     prob_pp_kappa = 1.0 / (1.0 + np.exp(-15 * (kappa - kappa_threshold)))
-        prob_pp_kappa = 1.0 / (1.0 + np.exp(-15 * (kappa - kappa_threshold)))
+        prob_st_kappa = 1.0 / (1.0 + np.exp(-15 * (kappa - kappa_threshold)))
 
         # cte가 클수록(예: 0.3m 이상) 복귀 능력이 좋은 PP 선호
-        cte_threshold = 0.5
-        prob_pp_cte = 1.0 / (1.0 + np.exp(-10 * (abs(cte) - cte_threshold)))
+        cte_threshold = 0.6
+        prob_st_cte = 1.0 / (1.0 + np.exp(-10 * (abs(cte) - cte_threshold)))
 
-        l_pp = np.maximum(prob_pp_kappa, prob_pp_cte)
+        l_st = np.maximum(prob_st_kappa, prob_st_cte)
         
-        l_st = 1.0 - l_pp
+        l_pp = 1.0 - l_st
 
         return l_pp, l_st
 
@@ -348,9 +301,9 @@ class IMMController(Node):
         cmd.gear = 1 if is_reverse else 2
         cmd.speed = 30 if is_reverse else 100
         
-        # delta_s, _, _, _ = self.stanley.stanley_control(self.current_state, self.path_x, self.path_y, self.path_yaw, h_gain=0.5, c_gain=0.24, reverse=is_reverse)
-        delta_s, _, cte_s, _ = self.stanley.stanley_control(self.current_state, self.path_x, self.path_y, self.path_yaw, h_gain=0.3, c_gain=0.02, reverse=is_reverse)
-        delta_p, self.last_target_idx, _ = self.pp.compute_control(self.current_state, self.path_x, self.path_y, self.path_yaw, reverse=is_reverse)
+        delta_s, self.last_target_idx, cte_s, _ = self.stanley.stanley_control(self.current_state, self.path_x, self.path_y, self.path_yaw, h_gain=0.5, c_gain=0.24, reverse=is_reverse)
+        # delta_s, self.last_target_idx, cte_s, _ = self.stanley.stanley_control(self.current_state, self.path_x, self.path_y, self.path_yaw, h_gain=0.3, c_gain=0.02, reverse=is_reverse)
+        delta_p, _, _ = self.pp.compute_control(self.current_state, self.path_x, self.path_y, self.path_yaw, reverse=is_reverse)
 
         path_len = len(self.path_x)
         self.last_target_idx = max(0, min(self.last_target_idx, path_len - 1))
@@ -370,7 +323,7 @@ class IMMController(Node):
             self.mu = np.array([0.5, 0.5])
 
         dominant = 'Stanley' if self.mu[0] >= self.mu[1] else 'PurePursuit'
-        self.get_logger().info(f'[IMM] {dominant} (S={self.last_target_idx:.2f} | PP={self.mu[1]:.2f})', throttle_duration_sec = 1.0)
+        self.get_logger().info(f'[IMM] {dominant} (idx={self.last_target_idx:.2f} | CTE={cte_s:.2f})', throttle_duration_sec = 1.0)
         # self.mu = np.array([1.0, 0.0])
         final_delta = self.mu[0] * delta_s + self.mu[1] * delta_p
 
@@ -387,7 +340,7 @@ class IMMController(Node):
             self.cmd_pub.publish(cmd)
             return
         
-        self.get_logger().info(f'path_len : {path_len},  target_idx : {self.last_target_idx}, state_yaw : {self.current_state.yaw}')
+        # self.get_logger().info(f'path_len : {path_len},  target_idx : {self.last_target_idx}, state_yaw : {self.current_state.yaw}')
         if is_reverse:
             cmd.steer = int(m.degrees(final_delta)) 
         else:

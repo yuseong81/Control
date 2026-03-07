@@ -23,7 +23,7 @@ class PurePursuitController:
     
     def __init__(self):
         self.k = 0.4
-        self.Lfc = 2
+        self.Lfc = 3
         self.wheelbase = 1.04
         self.max_steer = 28 * math.pi / 180
         # self.old_nearest_point_idx = None

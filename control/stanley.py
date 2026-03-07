@@ -80,7 +80,7 @@ class Stanley:
         return angle
     
     def calc_target_index(self, state, cx, cy, cyaw, reverse=False):
-        # 1. 위치 보정 (후진 시 뒷바퀴가 진행 방향의 앞이 됨)
+        
         inv_dir = -1.0 if reverse else 1.0
         fx = state.x + (self.__L / 2.0) * np.cos(state.yaw) * inv_dir
         fy = state.y + (self.__L / 2.0) * np.sin(state.yaw) * inv_dir
@@ -88,40 +88,31 @@ class Stanley:
         # fx = state.x + (self.__L / 2.0) * np.cos(state.yaw)
         # fy = state.y + (self.__L / 2.0) * np.sin(state.yaw)
 
-        # 2. 탐색 범위 제한
         search_range = 200
         start_idx = max(0, self._last_idx - search_range)
         end_idx = min(len(cx), self._last_idx + search_range)
 
-        # 3. 거리 계산
         dx_list = [fx - icx for icx in cx[start_idx:end_idx]]
         dy_list = [fy - icy for icy in cy[start_idx:end_idx]]
         d_list = np.hypot(dx_list, dy_list)
 
-        # 4. 최단 거리 인덱스 추출
         min_idx_relative = np.argmin(d_list)
         target_idx = min_idx_relative + start_idx
         self._last_idx = target_idx
 
-        # 5. CTE(거리) 절대값
         cte_value = d_list[min_idx_relative]
 
-        # 6. 사이드 판별 (경로 기준)
-        # 타겟 점의 진행 방향(path_yaw) 대비 차량이 어디 있는지 계산
         vec_path_to_front = [fx - cx[target_idx], fy - cy[target_idx]]
         path_yaw = cyaw[target_idx]
         
         # 외적을 통한 부호 결정
         side = np.sin(path_yaw) * vec_path_to_front[0] - np.cos(path_yaw) * vec_path_to_front[1]
-        
-        # 7. 조향각(theta_d) 계산에 직접 쓰이는 변수 결정
-        # 이 부호가 반대로 되어 있으면 차가 경로 밖으로 도망갑니다.
+                
         if side > 0:
             error_front_axle = cte_value
         else:
             error_front_axle = -cte_value
 
-        # 중요: 반드시 'error_front_axle'을 두 번째 인자로 넘겨야 합니다.
         return target_idx, error_front_axle, cte_value
 
     # def calc_target_index(self, state, cx, cy, cyaw, reverse=False):
