@@ -61,8 +61,8 @@ class PurePursuitNode:
 
         # Subscriber 
         rospy.Subscriber("odometry/filtered_global", Odometry, self.odom_callback, queue_size=10)
-        rospy.Subscriber("local_path", Path, self.path_callback, queue_size=10)
-        rospy.Subscriber("target_velocity", Float32, self.target_velocity_callback, queue_size=10)
+        rospy.Subscriber("/global_path", Path, self.path_callback, queue_size=10)
+        rospy.Subscriber("/target_velocity", Float32, self.target_velocity_callback, queue_size=10)
         
         self.cmd_pub = rospy.Publisher("/ctrl_cmd", CtrlCmd, queue_size=10)
 
@@ -101,6 +101,8 @@ class PurePursuitNode:
         
         # 종방향 제어 타입을 1번(accel, brake)으로 설정 
         cm.longlCmdType = 1 
+
+        self.target_velocity = 10.0 / 3.6
         
         # 종방향 제어
         if self.state.v < self.target_velocity:
